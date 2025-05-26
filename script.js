@@ -1,0 +1,254 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 const gameContainer = document.getElementById('game-container');\
+const character = document.getElementById('character');\
+const equationInput = document.getElementById('equation-input');\
+const jumpButton = document.getElementById('jump-button');\
+const messagesDiv = document.getElementById('messages');\
+const scoreDisplay = document.getElementById('score');\
+\
+const GAME_WIDTH = gameContainer.offsetWidth;\
+const GAME_HEIGHT = gameContainer.offsetHeight;\
+const CHARACTER_START_X = 50; // Initial X position of character\
+const CHARACTER_START_Y = 0; // Initial Y position of character (bottom of container)\
+const CHARACTER_WIDTH = 40;\
+const CHARACTER_HEIGHT = 60;\
+const STAR_SIZE = 30;\
+\
+let currentScore = 0;\
+let stars = []; // To store star elements and their positions\
+\
+// --- Game Initialization ---\
+function initGame() \{\
+    currentScore = 0;\
+    scoreDisplay.textContent = `Stars: $\{currentScore\}`;\
+    character.style.left = `$\{CHARACTER_START_X\}px`;\
+    character.style.bottom = `$\{CHARACTER_START_Y\}px`;\
+    messagesDiv.style.display = 'none';\
+    clearStars();\
+    createStars();\
+\}\
+\
+function clearStars() \{\
+    stars.forEach(star => star.element.remove());\
+    stars = [];\
+\}\
+\
+function createStars() \{\
+    // Example star positions. You'll want to make these dynamic for levels.\
+    // X, Y are relative to game container (bottom-left origin for Y in math context)\
+    const starPositions = [\
+        \{ x: 200, y: 150 \},\
+        \{ x: 400, y: 250 \},\
+        \{ x: 600, y: 180 \}\
+    ];\
+\
+    starPositions.forEach((pos, index) => \{\
+        const starElement = document.createElement('div');\
+        starElement.classList.add('star');\
+        // Convert math Y (from bottom) to CSS top (from top)\
+        starElement.style.left = `$\{pos.x\}px`;\
+        starElement.style.bottom = `$\{pos.y\}px`; // CSS bottom aligns with math Y\
+        gameContainer.appendChild(starElement);\
+        stars.push(\{\
+            id: `star-$\{index\}`,\
+            element: starElement,\
+            x: pos.x,\
+            y: pos.y,\
+            collected: false\
+        \});\
+    \});\
+\}\
+\
+// --- Parabola Parsing and Calculation ---\
+\
+// Parses the equation y = ax^2 + bx + c\
+function parseEquation(equation) \{\
+    // Basic parsing, assumes correct format. More robust parsing needed for errors.\
+    const regex = /y\\s*=\\s*([+\\-]?\\d*\\.?\\d*)x\\^2\\s*([+\\-]?\\d*\\.?\\d*)x\\s*([+\\-]?\\d*\\.?\\d*)/;\
+    const matches = equation.match(regex);\
+\
+    if (matches) \{\
+        let a = parseFloat(matches[1] || '0');\
+        let b = parseFloat(matches[2] || '0');\
+        let c = parseFloat(matches[3] || '0');\
+\
+        // Handle cases like "x^2" (a=1) or "-x^2" (a=-1)\
+        if (matches[1] === '+' || matches[1] === '') a = 1;\
+        if (matches[1] === '-') a = -1;\
+        if (matches[2] === '+' || matches[2] === '') b = 1;\
+        if (matches[2] === '-') b = -1;\
+        if (matches[3] === '+' || matches[3] === '') c = 1;\
+        if (matches[3] === '-') c = -1;\
+\
+\
+        // If 'c' is missing, it's 0 (e.g., y = x^2 + x)\
+        if (isNaN(c)) c = 0;\
+\
+        return \{ a, b, c \};\
+    \}\
+    return null; // Invalid equation format\
+\}\
+\
+// Calculates Y for a given X based on the parsed equation\
+function calculateY(x, \{ a, b, c \}) \{\
+    // The Y in our math equation is from the bottom of the screen.\
+    // The character's initial Y is at the bottom (0).\
+    // The character's initial X is CHARACTER_START_X.\
+    // We need to shift the origin for the equation to be relative to CHARACTER_START_X.\
+    const relativeX = x - CHARACTER_START_X;\
+    return a * (relativeX * relativeX) + (b * relativeX) + c;\
+\}\
+\
+// --- Character Animation ---\
+\
+function animateCharacter(pathPoints) \{\
+    let pointIndex = 0;\
+    const animationDuration = 2000; // 2 seconds for the jump\
+    const intervalTime = animationDuration / pathPoints.length; // Time between each point\
+\
+    const animationInterval = setInterval(() => \{\
+        if (pointIndex >= pathPoints.length) \{\
+            clearInterval(animationInterval);\
+            checkGameOver();\
+            return;\
+        \}\
+\
+        const point = pathPoints[pointIndex];\
+        const newX = point.x;\
+        // Convert math Y (from bottom) to CSS bottom\
+        const newY = point.y;\
+\
+        // Apply position\
+        character.style.left = `$\{newX\}px`;\
+        character.style.bottom = `$\{newY\}px`;\
+\
+        // Check for collisions with stars\
+        checkCollisions(newX, newY);\
+\
+        // Check if character went off screen\
+        if (newX < 0 || newX > GAME_WIDTH - CHARACTER_WIDTH || newY < 0) \{\
+            clearInterval(animationInterval);\
+            showMessage("You went off screen! Try again.", 'red');\
+            setTimeout(initGame, 2000); // Restart after a delay\
+            return;\
+        \}\
+\
+        pointIndex++;\
+    \}, intervalTime);\
+\}\
+\
+// --- Collision Detection ---\
+\
+function checkCollisions(charX, charY) \{\
+    stars.forEach(star => \{\
+        if (star.collected) return; // Skip if already collected\
+\
+        // Get character's actual bounding box\
+        const charRect = \{\
+            left: charX,\
+            right: charX + CHARACTER_WIDTH,\
+            bottom: charY,\
+            top: charY + CHARACTER_HEIGHT\
+        \};\
+\
+        // Get star's actual bounding box (remember star.y is its bottom)\
+        const starRect = \{\
+            left: star.x,\
+            right: star.x + STAR_SIZE,\
+            bottom: star.y,\
+            top: star.y + STAR_SIZE\
+        \};\
+\
+        // AABB collision detection\
+        if (charRect.left < starRect.right &&\
+            charRect.right > starRect.left &&\
+            charRect.top > starRect.bottom &&\
+            charRect.bottom < starRect.top) \{\
+            // Collision detected!\
+            star.collected = true;\
+            star.element.style.display = 'none'; // Hide the star\
+            currentScore++;\
+            scoreDisplay.textContent = `Stars: $\{currentScore\}`;\
+            showMessage("Star collected!", 'green');\
+        \}\
+    \});\
+\}\
+\
+// --- Game State and Messages ---\
+\
+function showMessage(msg, color = 'black') \{\
+    messagesDiv.textContent = msg;\
+    messagesDiv.style.color = color;\
+    messagesDiv.style.display = 'block';\
+    setTimeout(() => \{\
+        messagesDiv.style.display = 'none';\
+    \}, 1500); // Hide message after 1.5 seconds\
+\}\
+\
+function checkGameOver() \{\
+    const allStarsCollected = stars.every(star => star.collected);\
+    if (allStarsCollected) \{\
+        showMessage("Level Complete! You collected all stars!", 'blue');\
+        setTimeout(initGame, 3000); // Restart game or go to next level\
+    \} else \{\
+        // If animation ends and not all stars are collected, it's a "miss"\
+        showMessage("Missed some stars! Try again.", 'orange');\
+        setTimeout(initGame, 2000); // Restart after a delay\
+    \}\
+\}\
+\
+// --- Event Listener ---\
+\
+jumpButton.addEventListener('click', () => \{\
+    const equationText = equationInput.value.trim().toLowerCase();\
+    const coefficients = parseEquation(equationText);\
+\
+    if (!coefficients) \{\
+        showMessage("Invalid equation format! Use y = ax^2 + bx + c", 'red');\
+        return;\
+    \}\
+\
+    // Generate path points\
+    const pathPoints = [];\
+    // We want to calculate points from the character's current X position\
+    // to the right edge of the screen, or perhaps a maximum jump distance.\
+    const maxJumpDistance = GAME_WIDTH - CHARACTER_START_X; // Or a fixed distance like 500\
+    const step = 5; // How many pixels to step for each calculation\
+\
+    for (let x = CHARACTER_START_X; x <= GAME_WIDTH; x += step) \{\
+        let y = calculateY(x, coefficients);\
+\
+        // Convert math Y (from bottom, relative to ground) to CSS Y (from bottom)\
+        // If character starts at CHARACTER_START_Y (which is 0 or ground level)\
+        // The Y from the equation is the height above the ground.\
+        // So, character's bottom position is y.\
+        const charBottom = y;\
+\
+        // Clamp Y to game boundaries\
+        if (charBottom < 0 - CHARACTER_HEIGHT) \{ // Went far below ground\
+             break; // Stop calculating if too far below\
+        \}\
+        if (charBottom > GAME_HEIGHT) \{ // Went too high\
+            // We might want to cap the height or just let it go off screen\
+            // For now, let's allow it to go off screen to simulate a jump going too high\
+        \}\
+\
+\
+        pathPoints.push(\{ x: x, y: charBottom \});\
+    \}\
+\
+    if (pathPoints.length > 0) \{\
+        animateCharacter(pathPoints);\
+    \} else \{\
+        showMessage("No valid jump path generated. Check your equation.", 'red');\
+    \}\
+\});\
+\
+// Initialize the game when the script loads\
+initGame();}
